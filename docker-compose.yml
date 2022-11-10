@@ -33,7 +33,7 @@ services:
     env_file:
       - ./env/backend.env
   mongo:
-    image: 'mongo'
+    image: 'mongo:latest'
     container_name: 'mongo-db'
     ports:
       - '27017-27019:27017-27019'

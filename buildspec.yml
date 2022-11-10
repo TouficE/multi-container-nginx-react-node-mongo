@@ -5,24 +5,20 @@ phases:
       docker: 18
   pre_build:
     commands:
-      # Install Snyk
-      - echo Install Snyk
-      - curl -Lo ./snyk "https://github.com/snyk/snyk/releases/download/v1.210.0/snyk-linux"
-      - chmod -R +x ./snyk
-      # Snyk auth
-      # - ./snyk config set api="$SNYK_AUTH_TOKEN"
-      # Build Docker image for testing
-      - echo Build client and backend docker images for testing...
-      - docker build -t lukondefmwila/react-test -f ./client/Dockerfile.dev ./client
-      - docker build -t lukondefmwila/nodejs-test -f ./backend/Dockerfile.dev ./backend
+      - echo Logging in to Amazon ECR...
+      - aws --version
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin 573664571276.dkr.ecr.us-west-2.amazonaws.com
+      - REPOSITORY_URI=573664571276.dkr.ecr.us-west-2.amazonaws.com/topthree
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
   build:
     commands:
       - echo Build started on `date`
       # Run tests with built Docker images
-      - echo Run react tests...
-      - docker run -e CI=true lukondefmwila/react-test
-      - echo Run nodejs tests...
-      - docker run -e CI=true lukondefmwila/nodejs-test
+      # - echo Run react tests...
+      # - docker run -e CI=true lukondefmwila/react-test
+      # - echo Run nodejs tests...
+      # - docker run -e CI=true lukondefmwila/nodejs-test
       # Scan Docker image with Snyk
       ## Client
       ## Run test for security vulernabilities
@@ -35,16 +31,31 @@ phases:
       ## Setup continuous monitoring
       # - ./snyk monitor --docker lukondefmwila/nodejs-test:latest --file=./backend/Dockerfile.dev
       # Build the Docker images
-      - echo Building the production Docker image...
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      - docker build -t $REPOSITORY_URI:latest .
+      - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+
       - docker build -t lukondefmwila/dkr-multicontainer-app-client ./client
+      - docker tag lukondefmwila/dkr-multicontainer-app-client $REPOSITORY_URI:$IMAGE_TAG:client
       - docker build -t lukondefmwila/dkr-multicontainer-app-backend ./backend
+      - docker tag lukondefmwila/dkr-multicontainer-app-backend $REPOSITORY_URI:$IMAGE_TAG:backend
       - docker build -t lukondefmwila/dkr-multicontainer-app-nginx ./nginx
-      # Log in to the Docker CLI
-      - echo "$DOCKER_PW" | docker login -u "$DOCKER_ID" --password-stdin
+      - docker tag lukondefmwila/dkr-multicontainer-app-nginx $REPOSITORY_URI:$IMAGE_TAG:nginx
+
   post_build:
     commands:
       # Take these images and push them to Docker hub
+      - echo Build completed on `date`
       - echo Pushing the Docker images...
       - docker push lukondefmwila/dkr-multicontainer-app-client
       - docker push lukondefmwila/dkr-multicontainer-app-backend
       - docker push lukondefmwila/dkr-multicontainer-app-nginx
+        
+      # - echo Pushing the Docker images...
+      # - docker push $REPOSITORY_URI:latest
+      # - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - echo Writing image definitions file...
+      - printf '[{"name":"hello-world","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+artifacts:
+    files: imagedefinitions.json
